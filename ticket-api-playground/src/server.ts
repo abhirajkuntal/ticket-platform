@@ -81,6 +81,17 @@ app.patch("/api/v1/tickets/:id", (req, res) => {
   res.json(updated);
 });
 
+app.post("/api/v1/tickets/:id/close", (req,res) => {
+  const ticket = findOr404(req.params.id);
+  if (ticket.status === "closed") {
+      throw new HttpError(409, "ALREADY CLOSED", `Ticket ${ticket.id} is already closed`);
+  }
+
+  const updated: Ticket = { ...ticket, status: "closed", updatedAt: new Date().toISOString()};
+  tickets.set(ticket.id, updated);
+  res.json(updated);
+});
+
 app.delete("/api/v1/tickets/:id", (req, res) => {
   findOr404(req.params.id);
   tickets.delete(req.params.id);
