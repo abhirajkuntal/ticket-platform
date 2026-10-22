@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import cors from "cors";
 
 type Status = "open" | "in_progress" | "closed";
 type Ticket = {
@@ -43,8 +44,22 @@ function findOr404(id: string): Ticket {
   return t;
 }
 
+function etagFor(t:Ticket): string {
+   const hash = createHash("sha1").update(JSON.stringify(t)).digest("base64url"); 
+   return `"${hash}"`;
+}
+
+function etagMatches(header: string | undefined, etag: string): boolean {
+    if (!header) return false;
+    if (header.trim() === "*" ) return true;
+    return header.split(",").some((tag) => tag.trim().replace(/^W\//, "") === etag);
+}
+
 const app = express();
 app.use(express.json({ limit: "100kb" }));
+
+// CORS
+app.use(cors({origin: ["https://example.com"]}));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -70,7 +85,17 @@ app.post("/api/v1/tickets", (req, res) => {
 });
 
 app.get("/api/v1/tickets/:id", (req, res) => {
-  res.json(findOr404(req.params.id));
+  const ticket = findOr404(req.params.id);
+  const etag = etagFor(ticket);
+
+  res.set("ETag", etag);
+  res.set("Cache-Control", "no-cache"); // cache but revalidate every time
+
+  if (etagMatches(req.get("If-None-Match"), etag)) {
+      res.status(304).end();
+      return;
+  }
+  res.json(ticket);
 });
 
 app.patch("/api/v1/tickets/:id", (req, res) => {
